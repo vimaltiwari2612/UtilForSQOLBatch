@@ -1,0 +1,90 @@
+global class UtilForSOQLBatch implements Database.Batchable<sObject>,Database.Stateful{
+	
+  	public  Map<String,List<String>> classVsQueries = new Map<String,List<String>>();
+  	public String filecontent='';
+    global Database.QueryLocator start(Database.BatchableContext BC){
+       	String queryString = 'SELECT Body,Name FROM ApexClass' ;
+        return Database.getQueryLocator(queryString);
+    }
+    
+   
+     global void execute(Database.BatchableContext BC, List<ApexClass> classes){
+			Map<String,List<String>> resultMap=new Map<String,List<String>>();
+			resultMap.put('Success',new List<String>());
+			resultMap.put('Overflow',new List<String>());
+			
+			Map<String,String> querymap=new Map<String ,String>();
+			String code = '';
+			for (ApexClass apexcls: classes){
+		       querymap.put(apexcls.name,apexcls.body);
+				code = apexcls.body; 
+			fileContent += 'Class Name :'+apexcls.name.trim()+'\n'+'Type : Static SOQLs '+'\n'+'SOQL :'+'\n\n';	
+			List<String> data = code.split(';\n');
+			for(String key:data){
+				key =key.replaceAll('\n','');
+				key =key.replaceAll('  ','');
+				key =key.replaceAll('\t',''); 
+				String r = getMatches(key);
+				if(r != null){
+                    resultMap.get('Success').add(r);
+					fileContent+='\t'+r.trim()+'\n\n';
+				}else{
+						resultMap.get('Overflow').add(key);
+				}
+			}
+			for(String body : resultMap.get('Overflow'))
+				{
+					if(body.containsIgnoreCase('[SELECT'))
+					{
+						integer indexStart=body.indexof('[');
+						integer indexEnd=body.indexof(']')+1;
+                        String queryString='';
+                        try{
+							queryString = body.substring(indexStart,indexEnd);
+                        }catch(Exception e)
+                        {
+                            queryString = body.substring(indexStart);
+                        }
+						resultMap.get('Success').add(queryString);	
+						fileContent+='\t'+queryString.trim()+'\n\n\n';
+					}   
+     
+			}
+			 classVsQueries.put(apexcls.name,resultMap.get('Success'));
+			 fileContent+='\n\n\n\n';
+		}
+		     
+     }
+     
+     global void finish(Database.BatchableContext BC){
+     	
+	    Document objD = new Document();
+        objD.ContentType = 'pdf';
+		objD.name = 'SOQLExtract.'+objD.ContentType;
+         if(fileContent==null || fileContent.trim()=='')
+             fileContent='No Data Fetched!';
+         System.debug('fileContent  = '+fileContent);
+		objD.body = blob.valueof(fileContent);
+		objD.folderId = UserInfo.getUserId();
+		insert objD;
+     }  
+
+	public String getMatches(String body){
+	
+		//Pattern p = Pattern.compile('\\[(Select|SELECT|select)(.|\\w|\\n)+?\\]');
+        Pattern p = Pattern.compile('\\[(Select|SELECT|select)(\\w)+?\\]');
+		Matcher m = p.matcher(body);
+		Integer i=0;
+		try{
+			while(m.find()) 
+			{
+				return m.group();  
+			}
+			}catch(Exception e){
+                System.debug('Exception : '+e.getMessage());
+			}
+		return null;
+     }
+    
+    
+}
